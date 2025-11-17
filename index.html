@@ -356,9 +356,16 @@
 
         .home-donor-actions {
             display: flex;
-            justify-content: flex-end;
-            gap: 10px;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
             flex-wrap: wrap;
+            width: 100%;
+        }
+
+        .home-donor-export {
+            display: flex;
+            align-items: center;
         }
 
         .home-donor-filter-grid {
@@ -1698,7 +1705,7 @@
             gap: 6px;
         }
 
-        .group-donor-edit,
+        .group-donor-payment,
         .group-donor-delete {
             padding: 4px 10px;
             border: none;
@@ -1709,11 +1716,11 @@
             transition: all 0.3s ease;
         }
 
-        .group-donor-edit {
+        .group-donor-payment {
             background: rgba(59, 130, 246, 0.9);
         }
 
-        .group-donor-edit:hover {
+        .group-donor-payment:hover {
             background: rgba(37, 99, 235, 1);
             transform: translateY(-1px);
             box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
@@ -4841,6 +4848,11 @@
                         </div>
                     </div>
                     <div class="home-donor-actions">
+                        <div class="home-donor-export">
+                            <button class="btn btn-secondary" onclick="exportBreakdownToExcel()" id="exportBreakdownBtn" disabled>
+                                ייצוא לאקסל – מודגשים בלבד
+                            </button>
+                        </div>
                         <div class="home-donor-toggle" id="homeDonorSortToggleWrapper">
                             <span>מודגשים בראש הרשימה</span>
                             <label class="switch">
@@ -7029,6 +7041,75 @@
                 }
             }
 
+            const exportBtn = document.getElementById('exportBreakdownBtn');
+            if (exportBtn) {
+                const exportStatuses = hasHighlights
+                    ? Array.from(homeDonorHighlights)
+                    : ['none', 'progress', 'met', 'exceeded'];
+                const exportCount = baseData.filter(item => exportStatuses.includes(item.status)).length;
+                exportBtn.textContent = exportCount > 0
+                    ? `ייצוא לאקסל – מודגשים בלבד (${exportCount})`
+                    : 'ייצוא לאקסל – מודגשים בלבד';
+                exportBtn.disabled = exportCount === 0;
+            }
+
+        }
+
+        function exportBreakdownToExcel() {
+            const selectedStatuses = homeDonorHighlights.size > 0
+                ? Array.from(homeDonorHighlights)
+                : ['none', 'progress', 'met', 'exceeded'];
+
+            if (selectedStatuses.length === 0) {
+                showNotification('בחר קטגוריה לייצוא', 'error');
+                return;
+            }
+
+            const donorsToExport = donors.filter(donor => {
+                const status = getHomeDonorStatus(donor);
+                return selectedStatuses.includes(status);
+            });
+
+            if (donorsToExport.length === 0) {
+                showNotification('אין מתרימים בקטגוריות שנבחרו', 'error');
+                return;
+            }
+
+            const namesData = donorsToExport.map(donor => ({
+                'שם': donor.name || 'ללא שם'
+            }));
+
+            const detailedData = donorsToExport.map(donor => {
+                const status = getHomeDonorStatus(donor);
+                const statusLabel = HOME_DONOR_STATUS_LABELS[status] || '';
+                const goalRaw = Math.max(0, Math.round(parseFloat(donor.personalGoal) || defaultDonorGoal || 0));
+                const group = groups.find(g => g.id === donor.groupId);
+                return {
+                    'שם': donor.name || 'ללא שם',
+                    'סכום (₪)': Math.round(donor.amount || 0),
+                    'יעד (₪)': goalRaw,
+                    'קבוצה': group ? group.name : 'ללא קבוצה',
+                    'מצב': statusLabel
+                };
+            });
+
+            try {
+                const workbook = XLSX.utils.book_new();
+                const namesSheet = XLSX.utils.json_to_sheet(namesData);
+                XLSX.utils.book_append_sheet(workbook, namesSheet, 'שמות להגרלה');
+
+                const detailedSheet = XLSX.utils.json_to_sheet(detailedData);
+                XLSX.utils.book_append_sheet(workbook, detailedSheet, 'פרטים');
+
+                const statusLabels = selectedStatuses.map(s => HOME_DONOR_STATUS_LABELS[s] || s).join('_');
+                const fileName = `donors_export_${statusLabels}_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+                XLSX.writeFile(workbook, fileName);
+                showNotification(`קובץ נוצר עם ${donorsToExport.length} מתרימים`);
+            } catch (error) {
+                console.error('שגיאה בייצוא:', error);
+                showNotification('שגיאה בעת ייצוא הקובץ', 'error');
+            }
         }
 
         function updateHomeDonorHighlight(status, enabled) {
@@ -9470,7 +9551,7 @@
                                     <span class="group-donor-amount">₪${d.amount.toLocaleString()}</span>
                                 </div>
                                 <div class="group-donor-actions">
-                                    <button class="group-donor-edit" onclick="editDonor(${d.id})">ערוך</button>
+                                    <button class="group-donor-payment" onclick="addDonorPayment(${d.id})">הוסף תשלום</button>
                                     <button class="group-donor-delete" onclick="removeDonor(${d.id})">מחק</button>
                                 </div>
                             </div>
